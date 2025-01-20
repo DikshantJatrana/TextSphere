@@ -35,30 +35,39 @@ export const signupController = async (req, res) => {
 };
 
 export const loginController = async (req, res) => {
-  const error = validationResult(req);
-  if (!error.isEmpty()) {
-    res.status(401).json({ error: error.array() });
+  try {
+    const error = validationResult(req);
+    if (!error.isEmpty()) {
+      return res.status(401).json({ error: error.array() });
+    }
+
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(401).json({ msg: "Invalid User Details" });
+    }
+
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(401).json({ msg: "User Not Found" });
+    }
+
+    const isPassword = await bcrypt.compare(password, user.password);
+    if (!isPassword) {
+      return res.status(401).json({ msg: "Invalid User Details" });
+    }
+
+    const token = setToken(user);
+    res.cookie("token", token);
+    return res.status(201).json({ token, user });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ msg: "Internal Server Error" });
   }
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(401).json({ msg: "Invalid User Details" });
-  }
-  const user = await User.findOne({ email }).select("+password");
-  if (!user) {
-    res.status(401).json({ msg: "User Not Found" });
-  }
-  const isPassword = await bcrypt.compare(password, user.password);
-  if (!isPassword) {
-    res.status(401).json({ msg: "Invalid User Details" });
-  }
-  const token = setToken(user);
-  res.cookie("token", token);
-  res.status(201).json({ token, user });
 };
 
 export const logoutController = async (req, res) => {
   const token = req.cookies?.token || req.headers?.authorization?.split(" ")[1];
-  res.clearCookie(token);
+  res.clearCookie("token");
   if (!token) {
     return res.status(201).json({ msg: "Logged out succesfully" });
   }
@@ -81,13 +90,11 @@ export const UpdateContoller = async (req, res) => {
     return res.status(400).json({ msg: "No profile picture provided" });
   }
   try {
-    const result = await cloudinary.upload(profilePic, {
-      folder: "profile_pics",
-    });
+    const uploadResponse = await cloudinary.uploader.upload(profilePic);
 
     const user = await User.findByIdAndUpdate(
       req.user.id,
-      { profilePic: result.secure_url },
+      { profilePic: uploadResponse.secure_url },
       { new: true }
     );
 
